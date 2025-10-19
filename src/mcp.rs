@@ -43,8 +43,9 @@ impl StdioMcpServer {
             };
 
             let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
-            let id = req.get("id").cloned().unwrap_or(json!(null));
-            tracing::info!(%method, id=?id, "received request");
+            let id_opt = req.get("id").cloned();
+            let id_reply = id_opt.as_ref().filter(|v| !v.is_null()).cloned();
+            tracing::info!(%method, id=?id_opt, "received request");
             match method {
                 "initialize" => {
                     let params = req.get("params").cloned().unwrap_or(json!({}));
@@ -58,18 +59,18 @@ impl StdioMcpServer {
                         },
                         "serverInfo": {"name": "cursor-mcp-subagents", "version": env!("CARGO_PKG_VERSION")}
                     });
-                    write_response(&mut writer, id, result)?;
+                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, result)?; }
                 }
                 "server/info" => {
                     let info = json!({"name": "cursor-mcp-subagents", "version": env!("CARGO_PKG_VERSION")});
-                    write_response(&mut writer, id, json!({"serverInfo": info}))?;
+                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"serverInfo": info}))?; }
                 }
                 "tools/list" => {
                     let tools = list_tools_schema();
-                    write_response(&mut writer, id, json!({"tools": tools}))?;
+                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"tools": tools}))?; }
                 }
                 "prompts/list" => {
-                    write_response(&mut writer, id, json!({"prompts": []}))?;
+                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"prompts": []}))?; }
                 }
                 "resources/list" => {
                     let resources = vec![
@@ -86,7 +87,7 @@ impl StdioMcpServer {
                             "mimeType": "application/json"
                         })
                     ];
-                    write_response(&mut writer, id, json!({"resources": resources}))?;
+                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"resources": resources}))?; }
                 }
                 "resources/read" => {
                     let params = req.get("params").cloned().unwrap_or(json!({}));
@@ -101,7 +102,7 @@ impl StdioMcpServer {
                             ("application/json", serde_json::to_string_pretty(&json!({"agents": list})).unwrap_or_else(|_| "{}".into()))
                         }
                         _ => {
-                            write_error(&mut writer, id, -32602, "Unknown resource uri")?;
+                            if let Some(id) = id_reply.clone() { write_error(&mut writer, id, -32602, "Unknown resource uri")?; }
                             continue;
                         }
                     };
@@ -110,7 +111,7 @@ impl StdioMcpServer {
                         "mimeType": mime,
                         "text": text
                     })];
-                    write_response(&mut writer, id, json!({"contents": contents}))?;
+                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"contents": contents}))?; }
                 }
                 "tools/call" => {
                     let params = req.get("params").cloned().unwrap_or(json!({}));
@@ -118,12 +119,13 @@ impl StdioMcpServer {
                     let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
                     let result = self.dispatch_tool(name, arguments).await;
                     match result {
-                        Ok(v) => write_response(&mut writer, id, json!({"content": [{"type":"json","json": v}], "isError": false}))?,
-                        Err(e) => write_error(&mut writer, id, -32001, &format!("{}", e))?,
+                        Ok(v) => { if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"content": [{"type":"json","json": v}], "isError": false}))?; } },
+                        Err(e) => { if let Some(id) = id_reply.clone() { write_error(&mut writer, id, -32001, &format!("{}", e))?; } },
                     }
                 }
                 _ => {
-                    write_error(&mut writer, id, -32601, "method not found")?;
+                    // Do not respond to notifications (no id)
+                    if let Some(id) = id_reply.clone() { write_error(&mut writer, id, -32601, "method not found")?; }
                 }
             }
         }
