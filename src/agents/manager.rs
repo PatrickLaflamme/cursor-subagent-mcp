@@ -30,6 +30,8 @@ pub struct AgentHandle {
     pub orig_args: Vec<String>,
     pub orig_env: HashMap<String, String>,
     pub orig_working_dir: Option<PathBuf>,
+    // Last time this agent produced output or received input
+    pub last_used: Mutex<OffsetDateTime>,
 }
 
 impl AgentManagerImpl {
@@ -81,6 +83,7 @@ impl AgentManagerImpl {
             orig_args: req.args.clone(),
             orig_env: req.env.clone(),
             orig_working_dir: req.working_dir.clone(),
+            last_used: Mutex::new(OffsetDateTime::now_utc()),
         });
 
         // Start stdout/stderr pumps
@@ -93,13 +96,22 @@ impl AgentManagerImpl {
 
     pub async fn send_input(&self, agent_id: &str, input: &str) -> Result<(), AgentError> {
         let Some(handle) = self.agents.get(agent_id).map(|e| e.clone()) else { return Err(AgentError::NotFound(agent_id.to_string())); };
-        let mut child_guard = handle.child.lock();
-        let stdin = child_guard.stdin.as_mut().ok_or_else(|| AgentError::InvalidState("stdin not available".into()))?;
+        // Avoid holding the lock across await: temporarily take stdin
+        let mut stdin_pipe = {
+            let mut child = handle.child.lock();
+            child.stdin.take().ok_or_else(|| AgentError::InvalidState("stdin not available".into()))?
+        };
         use tokio::io::AsyncWriteExt;
-        stdin.write_all(input.as_bytes()).await.map_err(|e| AgentError::Io(e.to_string()))?;
-        stdin.write_all(b"\n").await.map_err(|e| AgentError::Io(e.to_string()))?;
-        stdin.flush().await.map_err(|e| AgentError::Io(e.to_string()))?;
-        self.metrics.total_input_bytes.fetch_add(input.as_bytes().len() as u64 + 1, Ordering::Relaxed);
+        stdin_pipe.write_all(input.as_bytes()).await.map_err(|e| AgentError::Io(e.to_string()))?;
+        stdin_pipe.write_all(b"\n").await.map_err(|e| AgentError::Io(e.to_string()))?;
+        stdin_pipe.flush().await.map_err(|e| AgentError::Io(e.to_string()))?;
+        // Return stdin to child
+        {
+            let mut child = handle.child.lock();
+            child.stdin.replace(stdin_pipe);
+        }
+        *handle.last_used.lock() = OffsetDateTime::now_utc();
+        self.metrics.total_input_bytes.fetch_add(input.len() as u64 + 1, Ordering::Relaxed);
         Ok(())
     }
 
@@ -187,24 +199,28 @@ impl AgentManagerImpl {
 
         if let Some(stdout) = stdout {
             let handle_out = handle.clone();
+            let metrics = self.metrics.clone();
             tokio::spawn(async move {
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     let len = line.len();
                     handle_out.buffer.lock().push_line(line);
-                    // We cannot access manager metrics here; compute output bytes in buffer and expose snapshot instead.
-                    let _ = len; // suppress unused warning in this scope
+                    *handle_out.last_used.lock() = OffsetDateTime::now_utc();
+                    metrics.total_output_bytes.fetch_add(len as u64 + 1, Ordering::Relaxed);
                 }
             });
         }
         if let Some(stderr) = stderr {
             let handle_err = handle.clone();
+            let metrics = self.metrics.clone();
             tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     handle_err.buffer.lock().push_line(format!("[stderr] {line}"));
+                    *handle_err.last_used.lock() = OffsetDateTime::now_utc();
+                    metrics.total_output_bytes.fetch_add(line.len() as u64 + 1, Ordering::Relaxed);
                 }
             });
         }

@@ -116,6 +116,14 @@ impl StdioMcpServer {
                 let list = self.manager.list().await;
                 Ok(json!({"agents": list}))
             }
+            "wait" => {
+                let p: WaitParams = serde_json::from_value(arguments)?;
+                let ms = if let Some(ms) = p.ms { ms } else if let Some(secs) = p.seconds { secs.saturating_mul(1000) } else { 0 };
+                if ms > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                }
+                Ok(json!({"waited_ms": ms}))
+            }
             "metrics" => {
                 let snap = self.manager.metrics_snapshot();
                 Ok(serde_json::to_value(snap)?)
@@ -164,6 +172,10 @@ fn list_tools_schema() -> Vec<serde_json::Value> {
             "signal":{"type":"string","enum":["term","kill"]}
         }}}),
         json!({"name":"list_agents","description":"List running agents","inputSchema": {"type":"object","properties":{}}}),
+        json!({"name":"wait","description":"Sleep for the specified duration","inputSchema": {"type":"object","properties":{
+            "ms": {"type":"number"},
+            "seconds": {"type":"number"}
+        }}}),
         json!({"name":"metrics","description":"Return server agent metrics","inputSchema": {"type":"object","properties":{}}}),
         json!({"name":"health_check","description":"Health check for external dependencies","inputSchema": {"type":"object","properties":{}}}),
     ]
@@ -284,5 +296,8 @@ struct ResetAgent { agent_id: String, hard: Option<bool> }
 
 #[derive(Debug, Deserialize)]
 struct StopAgent { agent_id: String, signal: Option<String> }
+
+#[derive(Debug, Deserialize)]
+struct WaitParams { ms: Option<u64>, seconds: Option<u64> }
 
 
