@@ -6,6 +6,11 @@ use crate::health;
 use serde_json::json;
 use std::io::Write;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// Global switch: once we detect raw JSON (no Content-Length) from the client,
+// we reply in ND-JSON (one JSON per line, no headers).
+static RAW_JSON_MODE: AtomicBool = AtomicBool::new(false);
 
 pub struct StdioMcpServer {
     manager: Arc<AgentManagerImpl>,
@@ -22,7 +27,9 @@ impl StdioMcpServer {
         let stdout = std::io::stdout();
         let mut reader = std::io::BufReader::new(stdin.lock());
         let mut writer = std::io::BufWriter::new(stdout.lock());
+        tracing::info!("run loop started: waiting for framed MCP requests on stdin");
         loop {
+            tracing::info!("waiting to parse next frame header");
             let msg = match read_framed_message_buf(&mut reader) {
                 Ok(m) => m,
                 Err(e) => {
@@ -37,19 +44,73 @@ impl StdioMcpServer {
 
             let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
             let id = req.get("id").cloned().unwrap_or(json!(null));
+            tracing::info!(%method, id=?id, "received request");
             match method {
                 "initialize" => {
+                    let params = req.get("params").cloned().unwrap_or(json!({}));
+                    let client_proto = params.get("protocolVersion").and_then(|x| x.as_str()).unwrap_or("2024-11-05");
                     let result = json!({
+                        "protocolVersion": client_proto,
                         "capabilities": {
-                            "tools": {"list": true, "call": true}
+                            "tools": {"list": true, "call": true},
+                            "prompts": {"list": true},
+                            "resources": {"list": true, "read": true, "subscribe": false}
                         },
                         "serverInfo": {"name": "cursor-mcp-subagents", "version": env!("CARGO_PKG_VERSION")}
                     });
                     write_response(&mut writer, id, result)?;
                 }
+                "server/info" => {
+                    let info = json!({"name": "cursor-mcp-subagents", "version": env!("CARGO_PKG_VERSION")});
+                    write_response(&mut writer, id, json!({"serverInfo": info}))?;
+                }
                 "tools/list" => {
                     let tools = list_tools_schema();
                     write_response(&mut writer, id, json!({"tools": tools}))?;
+                }
+                "prompts/list" => {
+                    write_response(&mut writer, id, json!({"prompts": []}))?;
+                }
+                "resources/list" => {
+                    let resources = vec![
+                        json!({
+                            "uri": "mcp://cursor-mcp-subagents/metrics",
+                            "name": "Server metrics snapshot",
+                            "description": "Current metrics and counters for the MCP server",
+                            "mimeType": "application/json"
+                        }),
+                        json!({
+                            "uri": "mcp://cursor-mcp-subagents/agents",
+                            "name": "Active agents list",
+                            "description": "List of currently running agents managed by the server",
+                            "mimeType": "application/json"
+                        })
+                    ];
+                    write_response(&mut writer, id, json!({"resources": resources}))?;
+                }
+                "resources/read" => {
+                    let params = req.get("params").cloned().unwrap_or(json!({}));
+                    let uri = params.get("uri").and_then(|x| x.as_str()).unwrap_or("");
+                    let (mime, text) = match uri {
+                        "mcp://cursor-mcp-subagents/metrics" => {
+                            let snap = self.manager.metrics_snapshot();
+                            ("application/json", serde_json::to_string_pretty(&snap).unwrap_or_else(|_| "{}".into()))
+                        }
+                        "mcp://cursor-mcp-subagents/agents" => {
+                            let list = self.manager.list().await;
+                            ("application/json", serde_json::to_string_pretty(&json!({"agents": list})).unwrap_or_else(|_| "{}".into()))
+                        }
+                        _ => {
+                            write_error(&mut writer, id, -32602, "Unknown resource uri")?;
+                            continue;
+                        }
+                    };
+                    let contents = vec![json!({
+                        "uri": uri,
+                        "mimeType": mime,
+                        "text": text
+                    })];
+                    write_response(&mut writer, id, json!({"contents": contents}))?;
                 }
                 "tools/call" => {
                     let params = req.get("params").cloned().unwrap_or(json!({}));
@@ -184,20 +245,35 @@ fn list_tools_schema() -> Vec<serde_json::Value> {
 fn read_framed_message_buf<R: std::io::BufRead>(bufreader: &mut R) -> anyhow::Result<Vec<u8>> {
     let mut header = String::new();
     let mut content_length: Option<usize> = None;
+    let mut header_lines: usize = 0;
     loop {
         header.clear();
         let n = bufreader.read_line(&mut header)?;
         if n == 0 { anyhow::bail!("eof"); }
         let line = header.trim_end_matches(['\r','\n']);
         if line.is_empty() { break; }
-        if let Some(rest) = line.strip_prefix("Content-Length:") {
-            let v = rest.trim();
-            content_length = Some(v.parse::<usize>()?);
+        header_lines += 1;
+        tracing::trace!(%line, "framing header line");
+        // Fallback for clients that send newline-delimited raw JSON instead of framed headers
+        if header_lines == 1 && line.starts_with('{') && line.contains("\"jsonrpc\"") {
+            tracing::debug!("detected raw JSON line without Content-Length; accepting as body");
+            RAW_JSON_MODE.store(true, Ordering::Relaxed);
+            return Ok(line.as_bytes().to_vec());
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            let name = name.trim();
+            if name.eq_ignore_ascii_case("content-length") {
+                let v = value.trim();
+                content_length = Some(v.parse::<usize>()?);
+            }
+            // ignore other headers (e.g., Content-Type)
         }
     }
     let len = content_length.ok_or_else(|| anyhow::anyhow!("missing Content-Length"))?;
     let mut body = vec![0u8; len];
     bufreader.read_exact(&mut body)?;
+    let preview = std::str::from_utf8(&body).ok().map(|s| if s.len() > 200 { &s[..200] } else { s }).unwrap_or("<non-utf8>");
+    tracing::trace!(header_lines, content_length=len, body_bytes=body.len(), preview=%preview, "framed message parsed");
     Ok(body)
 }
 
@@ -213,7 +289,14 @@ fn write_error<W: Write>(writer: &mut W, id: serde_json::Value, code: i64, messa
 
 fn write_framed<W: Write>(writer: &mut W, v: &serde_json::Value) -> anyhow::Result<()> {
     let s = serde_json::to_string(v)?;
-    write!(writer, "Content-Length: {}\r\n\r\n{}", s.len(), s)?;
+    // Respond in ND-JSON mode if detected (or forced), otherwise use Content-Length framing.
+    // This maximizes compatibility with editors that do not send LSP-style headers over stdio.
+    let force_ndjson = std::env::var("MCP_FORCE_NDJSON").ok().as_deref() == Some("1");
+    if force_ndjson || RAW_JSON_MODE.load(Ordering::Relaxed) {
+        write!(writer, "{}\n", s)?;
+    } else {
+        write!(writer, "Content-Length: {}\r\n\r\n{}", s.len(), s)?;
+    }
     writer.flush()?;
     Ok(())
 }
