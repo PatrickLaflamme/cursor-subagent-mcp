@@ -1,0 +1,47 @@
+[package]
+name = "cursor-mcp-subagents"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "MCP server to manage persistent cursor-agent child processes with async control and local summarization"
+authors = ["Patrick Laflamme <patrick@example.com>"]
+
+[features]
+default = ["summarizer-ollama", "summarizer-extractive"]
+summarizer-ollama = []
+summarizer-llama-cpp = []
+summarizer-extractive = []
+
+[dependencies]
+tokio = { version = "1.39", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "ansi"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+dashmap = "6.0"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+bytes = "1.6"
+regex = "1.10"
+once_cell = "1.19"
+time = { version = "0.3", features = ["macros", "serde"] }
+which = "6.0"
+rlimit = { version = "0.10", optional = true }
+process_control = "5.0"
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+parking_lot = "0.12"
+url = "2.5"
+
+[target.'cfg(unix)'.dependencies]
+rlimit = "0.10"
+
+[dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.10"
+shell-escape = "0.1.5"
+
+
