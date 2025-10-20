@@ -34,6 +34,6 @@ pub fn build_summarizer(
         #[cfg(feature = "summarizer-llama-cpp")]
         "llama_cpp" => Arc::new(llama_cpp::LlamaCppSummarizer::new(model)),
         "cursor_agent" => Arc::new(cursor_agent::CursorAgentSummarizer::new(model)),
-        _ => Arc::new(extractive::ExtractiveSummarizer::default()),
+        _ => Arc::new(extractive::ExtractiveSummarizer),
     }
 }

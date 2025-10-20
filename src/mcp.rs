@@ -376,7 +376,7 @@ fn write_framed<W: Write>(writer: &mut W, v: &serde_json::Value) -> anyhow::Resu
     // This maximizes compatibility with editors that do not send LSP-style headers over stdio.
     let force_ndjson = std::env::var("MCP_FORCE_NDJSON").ok().as_deref() == Some("1");
     if force_ndjson || RAW_JSON_MODE.load(Ordering::Relaxed) {
-        write!(writer, "{}\n", s)?;
+        writeln!(writer, "{}", s)?;
     } else {
         write!(writer, "Content-Length: {}\r\n\r\n{}", s.len(), s)?;
     }

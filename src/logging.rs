@@ -17,7 +17,7 @@ pub fn init_logging() {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
         .with_ansi(false)
-        .with_writer(|| std::io::stderr())
+        .with_writer(std::io::stderr)
         .with_thread_ids(false)
         .with_thread_names(false);
 

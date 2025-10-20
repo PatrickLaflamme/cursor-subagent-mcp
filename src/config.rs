@@ -39,10 +39,10 @@ impl AppConfig {
             url::Url::parse(&self.ollama_host)
                 .map_err(|_| "Invalid OLLAMA_HOST URL format".to_string())?;
         }
-        if self.summary_backend == "llama_cpp" {
-            if !std::path::Path::new(&self.summary_model).exists() {
-                return Err("llama.cpp model file does not exist".into());
-            }
+        if self.summary_backend == "llama_cpp"
+            && !std::path::Path::new(&self.summary_model).exists()
+        {
+            return Err("llama.cpp model file does not exist".into());
         }
         Ok(())
     }

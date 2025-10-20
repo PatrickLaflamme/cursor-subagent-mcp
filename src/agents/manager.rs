@@ -10,7 +10,7 @@ use std::sync::Arc;
 use time::OffsetDateTime;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::time::{timeout, Duration};
+// no direct tokio::time imports needed at module scope
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -148,11 +148,21 @@ impl AgentManagerImpl {
         }
         // Hard reset: kill child and respawn with same config under same ID
         let bin = self.resolve_binary()?;
+        // Best-effort terminate without holding the lock across awaits
         {
             let mut child = entry.child.lock();
             let _ = child.start_kill();
-            let _ = timeout(Duration::from_millis(1500), child.wait()).await; // best-effort
-            let _ = child.kill().await; // ensure terminated
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+        while std::time::Instant::now() < deadline {
+            let exited = {
+                let mut child = entry.child.lock();
+                child.try_wait().ok().flatten().is_some()
+            };
+            if exited {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
         let mut cmd = Command::new(&bin);
         for a in &entry.orig_args {
@@ -186,15 +196,22 @@ impl AgentManagerImpl {
         let Some((_, handle)) = self.agents.remove(agent_id) else {
             return Err(AgentError::NotFound(agent_id.to_string()));
         };
-        let mut child = handle.child.lock();
         match signal {
-            StopSignal::Term => {
-                let _ = child.start_kill();
-                let _ = timeout(Duration::from_millis(1500), child.wait()).await;
-                // best-effort
-            }
-            StopSignal::Kill => {
-                let _ = child.kill().await;
+            StopSignal::Term | StopSignal::Kill => {
+                {
+                    let mut child = handle.child.lock();
+                    let _ = child.start_kill();
+                }
+                // Poll until the process exits or timeout, without holding the lock across await
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+                while std::time::Instant::now() < deadline {
+                    let exited = {
+                        let mut child = handle.child.lock();
+                        child.try_wait().ok().flatten().is_some()
+                    };
+                    if exited { break; }
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
             }
         }
         self.metrics.stopped_count.fetch_add(1, Ordering::Relaxed);

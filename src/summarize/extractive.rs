@@ -1,7 +1,6 @@
 use crate::errors::SummarizeError;
 use crate::summarize::{SummarizeResult, Summarizer};
 
-#[derive(Default)]
 pub struct ExtractiveSummarizer;
 
 impl Summarizer for ExtractiveSummarizer {
@@ -49,7 +48,7 @@ mod tests {
 
     #[test]
     fn respects_token_cap_and_sentence_selection() {
-        let s = ExtractiveSummarizer::default();
+        let s = ExtractiveSummarizer;
         let context = "Sentence one is short. Sentence two is a little bit longer! And question three? Trailing.";
         let res = s.summarize(context, None, 40).expect("summarize");
         assert_eq!(res.tokens_used, 40);
@@ -60,7 +59,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_char_truncation_when_no_sentence_boundaries() {
-        let s = ExtractiveSummarizer::default();
+        let s = ExtractiveSummarizer;
         let context = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         let res = s.summarize(context, None, 8).expect("summarize");
         assert!(res.summary.len() <= 40);

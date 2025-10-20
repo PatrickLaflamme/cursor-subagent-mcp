@@ -71,9 +71,9 @@ impl Summarizer for OllamaSummarizer {
             // backoff
             std::thread::sleep(std::time::Duration::from_millis(100 * (attempt + 1)));
         }
-        return Err(SummarizeError::Http(
+        Err(SummarizeError::Http(
             last_err.unwrap_or_else(|| "ollama request failed".into()),
-        ));
+        ))
     }
 }
 
@@ -88,7 +88,7 @@ mod tests {
         let resp = format!(
             "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
             status,
-            body.as_bytes().len(),
+            body.len(),
             body
         );
         let _ = stream.write_all(resp.as_bytes());
@@ -104,7 +104,7 @@ mod tests {
             if let Ok((stream, _)) = listener.accept() {
                 // read some of the request to avoid broken pipe
                 let mut buf = [0u8; 1024];
-                let _ = (&stream).peek(&mut buf);
+                let _ = stream.peek(&mut buf);
                 write_http_response(stream, "200 OK", "{\"response\":\"ok summary\"}");
             }
         });
@@ -131,7 +131,7 @@ mod tests {
                 if let Ok((stream, _)) = listener.accept() {
                     count += 1;
                     let mut buf = [0u8; 1024];
-                    let _ = (&stream).peek(&mut buf);
+                    let _ = stream.peek(&mut buf);
                     write_http_response(stream, "500 Internal Server Error", "");
                 }
             }
