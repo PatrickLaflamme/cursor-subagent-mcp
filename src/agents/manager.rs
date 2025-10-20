@@ -352,16 +352,24 @@ mod tests {
     fn test_bin() -> String {
         // Cross-platform stand-in that echoes stdin → stdout
         #[cfg(unix)]
-        { "/bin/cat".to_string() }
+        {
+            "/bin/cat".to_string()
+        }
         #[cfg(windows)]
-        { "cmd.exe".to_string() }
+        {
+            "cmd.exe".to_string()
+        }
     }
 
     fn test_args() -> Vec<String> {
         #[cfg(unix)]
-        { vec![] }
+        {
+            vec![]
+        }
         #[cfg(windows)]
-        { vec!["/C".into(), "more".into()] }
+        {
+            vec!["/C".into(), "more".into()]
+        }
     }
 
     #[tokio::test]

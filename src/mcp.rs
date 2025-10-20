@@ -424,9 +424,13 @@ mod tests {
         let manager = Arc::new(crate::agents::manager::AgentManagerImpl::new(
             Some({
                 #[cfg(unix)]
-                { "/bin/cat".into() }
+                {
+                    "/bin/cat".into()
+                }
                 #[cfg(windows)]
-                { "cmd.exe".into() }
+                {
+                    "cmd.exe".into()
+                }
             }),
             16 * 1024,
         ));
@@ -475,9 +479,13 @@ mod tests {
         let manager = Arc::new(crate::agents::manager::AgentManagerImpl::new(
             Some({
                 #[cfg(unix)]
-                { "/bin/cat".into() }
+                {
+                    "/bin/cat".into()
+                }
                 #[cfg(windows)]
-                { "cmd.exe".into() }
+                {
+                    "cmd.exe".into()
+                }
             }),
             16 * 1024,
         ));
@@ -488,10 +496,7 @@ mod tests {
             Vec::new()
         };
         let resp = server
-            .dispatch_tool(
-                "create_agent",
-                serde_json::json!({ "args": args }),
-            )
+            .dispatch_tool("create_agent", serde_json::json!({ "args": args }))
             .await
             .unwrap();
         let id = resp
