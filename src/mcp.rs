@@ -335,36 +335,36 @@ Tip: Keep each subagent narrowly scoped to a single delegated goal; summarize pr
 
 fn list_tools_schema() -> Vec<serde_json::Value> {
     vec![
-        json!({"name":"create_agent","description":"Create a persistent cursor-agent process","inputSchema":{"type":"object","properties":{
+        json!({"name":"create_agent","description":"Create a persistent delegated cursor-agent subprocess to tackle a narrowly scoped subtask. Use when you want to delegate execution (CLI/REPL/server) separate from the main agent. Provide `working_dir` to scope filesystem context; pass `args` to configure the cursor-agent. Returns an `agent_id` you can use with other tools.","inputSchema":{"type":"object","properties":{
             "name": {"type":"string"},
             "working_dir": {"type":"string"},
             "env": {"type":"object","additionalProperties":{"type":"string"}},
             "args": {"type":"array","items":{"type":"string"}}
         }}}),
-        json!({"name":"send_agent_input","description":"Send input line to agent stdin","inputSchema": {"type":"object","required":["agent_id","input"],"properties":{
+        json!({"name":"send_agent_input","description":"Send one line of input to the delegated subagent's stdin (a trailing newline is added automatically). Use this to issue shell commands, REPL statements, or app-specific inputs after `create_agent`. For reading progress, use `get_agent_progress` rather than echoing stdout directly.","inputSchema": {"type":"object","required":["agent_id","input"],"properties":{
             "agent_id":{"type":"string"},
             "input":{"type":"string"}
         }}}),
-        json!({"name":"get_agent_progress","description":"Summarize agent buffered output","inputSchema": {"type":"object","required":["agent_id"],"properties":{
+        json!({"name":"get_agent_progress","description":"Summarize the subagent's buffered stdout/stderr without clearing it. Use to obtain concise snapshots of what the delegated subagent has done so far. Optionally pass `instructions` to steer summarization (e.g., 'focus on errors or TODOs'), and `max_tokens` to cap length. Use `reset_agent` to clear noise when needed.","inputSchema": {"type":"object","required":["agent_id"],"properties":{
             "agent_id":{"type":"string"},
             "instructions":{"type":"string"},
             "max_tokens":{"type":"number"}
         }}}),
-        json!({"name":"reset_agent","description":"Reset agent buffer or restart process","inputSchema": {"type":"object","required":["agent_id"],"properties":{
+        json!({"name":"reset_agent","description":"Reset the subagent state. Soft reset (default) clears the output buffer only (process keeps running). Hard reset (`hard=true`) restarts the underlying process with the same args/env/working_dir under the same ID. Use soft to remove noise; use hard if the process is wedged or needs a clean start.","inputSchema": {"type":"object","required":["agent_id"],"properties":{
             "agent_id":{"type":"string"},
             "hard":{"type":"boolean"}
         }}}),
-        json!({"name":"stop_agent","description":"Stop and remove agent","inputSchema": {"type":"object","required":["agent_id"],"properties":{
+        json!({"name":"stop_agent","description":"Terminate and remove a delegated subagent when its subtask is complete. Defaults to a graceful termination; set `signal` to `kill` if the process does not exit in time.","inputSchema": {"type":"object","required":["agent_id"],"properties":{
             "agent_id":{"type":"string"},
             "signal":{"type":"string","enum":["term","kill"]}
         }}}),
-        json!({"name":"list_agents","description":"List running agents","inputSchema": {"type":"object","properties":{}}}),
-        json!({"name":"wait","description":"Sleep for the specified duration","inputSchema": {"type":"object","properties":{
+        json!({"name":"list_agents","description":"List currently running delegated subagents, including `agent_id`, `pid`, `created_at`, and status. Use to discover existing sessions to reuse instead of spawning a new one.","inputSchema": {"type":"object","properties":{}}}),
+        json!({"name":"wait","description":"Sleep for a duration. Useful to briefly yield while background commands produce output before calling `get_agent_progress`. Prefer short waits and poll rather than long sleeps.","inputSchema": {"type":"object","properties":{
             "ms": {"type":"number"},
             "seconds": {"type":"number"}
         }}}),
-        json!({"name":"metrics","description":"Return server agent metrics","inputSchema": {"type":"object","properties":{}}}),
-        json!({"name":"health_check","description":"Health check for external dependencies","inputSchema": {"type":"object","properties":{}}}),
+        json!({"name":"metrics","description":"Return server-side metrics: created/stopped counts, active sessions, and I/O byte totals. Use for monitoring and debugging.","inputSchema": {"type":"object","properties":{}}}),
+        json!({"name":"health_check","description":"Run dependency checks: verifies `cursor-agent` availability, Ollama connectivity (if configured), and llama.cpp CLI presence. Use to diagnose environment issues before delegating.","inputSchema": {"type":"object","properties":{}}}),
     ]
 }
 
