@@ -63,7 +63,7 @@ impl StdioMcpServer {
                         "protocolVersion": client_proto,
                         "capabilities": {
                             "tools": {"list": true, "call": true},
-                            "prompts": {"list": true},
+                            "prompts": {"list": true, "get": true},
                             "resources": {"list": true, "read": true, "subscribe": false}
                         },
                         "serverInfo": {"name": "cursor-mcp-subagents", "version": env!("CARGO_PKG_VERSION")}
@@ -85,8 +85,42 @@ impl StdioMcpServer {
                     }
                 }
                 "prompts/list" => {
+                    let prompts = vec![json!({
+                        "name": "delegate_subagent_session",
+                        "description": "Start and manage a delegated subagent that tackles a scoped subtask using cursor-agent.",
+                        "arguments": [
+                            {"name": "task", "description": "Subtask description and concrete goals.", "required": true},
+                            {"name": "working_dir", "description": "Working directory for the subagent process.", "required": false},
+                            {"name": "args", "description": "Extra command line args for cursor-agent.", "required": false}
+                        ]
+                    })];
                     if let Some(id) = id_reply.clone() {
-                        write_response(&mut writer, id, json!({"prompts": []}))?;
+                        write_response(&mut writer, id, json!({"prompts": prompts}))?;
+                    }
+                }
+                "prompts/get" => {
+                    let params = req.get("params").cloned().unwrap_or(json!({}));
+                    let name = params.get("name").and_then(|x| x.as_str()).unwrap_or("");
+                    if name != "delegate_subagent_session" {
+                        if let Some(id) = id_reply.clone() {
+                            write_error(&mut writer, id, -32602, "Unknown prompt name")?;
+                        }
+                        continue;
+                    }
+                    let args = params.get("arguments").cloned().unwrap_or(json!({}));
+                    let task = args.get("task").and_then(|x| x.as_str()).unwrap_or("");
+                    let working_dir = args.get("working_dir").and_then(|x| x.as_str()).unwrap_or("");
+                    let guidance = format!(
+                        "You are delegating a scoped subtask to a persistent subagent (cursor-agent).\n\nTask: {task}\nWorking dir: {working_dir}\n\nUse the MCP server 'cursor-subagents' to manage the session:\n1) create_agent (set working_dir if provided; pass args if needed)\n2) send_agent_input to run concrete commands to advance the task\n3) get_agent_progress periodically with brief instructions to summarize current output\n4) reset_agent (soft) to clear noise, reset_agent (hard) to restart the process\n5) stop_agent when the delegated task is complete\n\nKeep the subagent focused on this subtask only. Summarize progress for the main agent and surface blockers early. Reuse an existing agent if appropriate (list_agents).",
+                    );
+                    let messages = vec![json!({
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": guidance}
+                        ]
+                    })];
+                    if let Some(id) = id_reply.clone() {
+                        write_response(&mut writer, id, json!({"messages": messages}))?;
                     }
                 }
                 "resources/list" => {
@@ -102,6 +136,12 @@ impl StdioMcpServer {
                             "name": "Active agents list",
                             "description": "List of currently running agents managed by the server",
                             "mimeType": "application/json"
+                        }),
+                        json!({
+                            "uri": "mcp://cursor-mcp-subagents/usage",
+                            "name": "Delegated subagent usage",
+                            "description": "How to use this server to delegate subtasks to cursor-agent",
+                            "mimeType": "text/markdown"
                         }),
                     ];
                     if let Some(id) = id_reply.clone() {
@@ -126,6 +166,22 @@ impl StdioMcpServer {
                                 serde_json::to_string_pretty(&json!({"agents": list}))
                                     .unwrap_or_else(|_| "{}".into()),
                             )
+                        }
+                        "mcp://cursor-mcp-subagents/usage" => {
+                            let usage = r#"# Delegated Subagent (cursor-subagents)
+
+Use this server to spawn and manage persistent child `cursor-agent` processes that focus on a scoped subtask of the main problem.
+
+Recommended flow:
+- create_agent: start a subagent (optionally set working_dir, args)
+- send_agent_input: run commands and interact with the subagent
+- get_agent_progress: summarize buffered output with brief instructions
+- reset_agent: soft clears buffer; hard restarts the process
+- list_agents: discover/attach to an existing subagent
+- stop_agent: terminate when done
+
+Tip: Keep each subagent narrowly scoped to a single delegated goal; summarize progress and blockers back to the main agent."#;
+                            ("text/markdown", usage.to_string())
                         }
                         _ => {
                             if let Some(id) = id_reply.clone() {
