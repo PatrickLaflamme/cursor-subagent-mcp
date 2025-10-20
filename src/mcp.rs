@@ -422,13 +422,29 @@ mod tests {
     #[tokio::test]
     async fn dispatch_create_list_and_metrics() {
         let manager = Arc::new(crate::agents::manager::AgentManagerImpl::new(
-            Some("/bin/cat".into()),
+            Some({
+                #[cfg(unix)]
+                { "/bin/cat".into() }
+                #[cfg(windows)]
+                { "cmd.exe".into() }
+            }),
             16 * 1024,
         ));
         let server = StdioMcpServer::new(manager.clone(), Arc::new(DummySummarizer));
         // create agent
+        let args: Vec<String> = if cfg!(windows) {
+            vec!["/C".into(), "more".into()]
+        } else {
+            Vec::new()
+        };
         let resp = server
-            .dispatch_tool("create_agent", serde_json::json!({"name":"t","args":[]}))
+            .dispatch_tool(
+                "create_agent",
+                serde_json::json!({
+                    "name":"t",
+                    "args": args
+                }),
+            )
             .await
             .unwrap();
         let id = resp
@@ -457,12 +473,25 @@ mod tests {
     #[tokio::test]
     async fn dispatch_get_agent_progress_calls_summarizer() {
         let manager = Arc::new(crate::agents::manager::AgentManagerImpl::new(
-            Some("/bin/cat".into()),
+            Some({
+                #[cfg(unix)]
+                { "/bin/cat".into() }
+                #[cfg(windows)]
+                { "cmd.exe".into() }
+            }),
             16 * 1024,
         ));
         let server = StdioMcpServer::new(manager.clone(), Arc::new(DummySummarizer));
+        let args: Vec<String> = if cfg!(windows) {
+            vec!["/C".into(), "more".into()]
+        } else {
+            Vec::new()
+        };
         let resp = server
-            .dispatch_tool("create_agent", serde_json::json!({"args":[]}))
+            .dispatch_tool(
+                "create_agent",
+                serde_json::json!({ "args": args }),
+            )
             .await
             .unwrap();
         let id = resp

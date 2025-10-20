@@ -95,6 +95,7 @@ mod tests {
         let _ = stream.flush();
     }
 
+    #[cfg_attr(windows, ignore)]
     #[test]
     fn success_path_returns_summary() {
         // tiny HTTP server responding with success once

@@ -350,8 +350,18 @@ mod tests {
     use tokio::time::{sleep, Duration};
 
     fn test_bin() -> String {
-        // Use /bin/cat as a stand-in for cursor-agent to echo stdin → stdout
-        "/bin/cat".to_string()
+        // Cross-platform stand-in that echoes stdin → stdout
+        #[cfg(unix)]
+        { "/bin/cat".to_string() }
+        #[cfg(windows)]
+        { "cmd.exe".to_string() }
+    }
+
+    fn test_args() -> Vec<String> {
+        #[cfg(unix)]
+        { vec![] }
+        #[cfg(windows)]
+        { vec!["/C".into(), "more".into()] }
     }
 
     #[tokio::test]
@@ -361,7 +371,7 @@ mod tests {
             name: Some("t1".into()),
             working_dir: None,
             env: Default::default(),
-            args: vec![],
+            args: test_args(),
         };
         let created = manager.create(req).await.expect("create");
         manager
@@ -381,7 +391,7 @@ mod tests {
                 name: None,
                 working_dir: None,
                 env: Default::default(),
-                args: vec![],
+                args: test_args(),
             })
             .await
             .unwrap();
@@ -403,7 +413,7 @@ mod tests {
                 name: None,
                 working_dir: None,
                 env: Default::default(),
-                args: vec![],
+                args: test_args(),
             })
             .await
             .unwrap();
