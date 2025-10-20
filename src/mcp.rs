@@ -109,7 +109,10 @@ impl StdioMcpServer {
                     }
                     let args = params.get("arguments").cloned().unwrap_or(json!({}));
                     let task = args.get("task").and_then(|x| x.as_str()).unwrap_or("");
-                    let working_dir = args.get("working_dir").and_then(|x| x.as_str()).unwrap_or("");
+                    let working_dir = args
+                        .get("working_dir")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("");
                     let guidance = format!(
                         "You are delegating a scoped subtask to a persistent subagent (cursor-agent).\n\nTask: {task}\nWorking dir: {working_dir}\n\nUse the MCP server 'cursor-subagents' to manage the session:\n1) create_agent (set working_dir if provided; pass args if needed)\n2) send_agent_input to run concrete commands to advance the task\n3) get_agent_progress periodically with brief instructions to summarize current output\n4) reset_agent (soft) to clear noise, reset_agent (hard) to restart the process\n5) stop_agent when the delegated task is complete\n\nKeep the subagent focused on this subtask only. Summarize progress for the main agent and surface blockers early. Reuse an existing agent if appropriate (list_agents).",
                     );
