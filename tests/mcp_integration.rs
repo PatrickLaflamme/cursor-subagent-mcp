@@ -34,10 +34,15 @@ fn read_framed<R: Read>(r: &mut R) -> serde_json::Value {
 
 #[test]
 fn mcp_end_to_end() {
-    // Use /bin/cat to satisfy agent spawn without cursor-agent
+    // Cross-platform stand-in to satisfy agent spawn without cursor-agent
+    let (bin, args): (String, Vec<String>) = if cfg!(windows) {
+        ("cmd.exe".into(), vec!["/C".into(), "more".into()])
+    } else {
+        ("/bin/cat".into(), vec![])
+    };
     let mut cmd = Command::cargo_bin("cursor-mcp-subagents").unwrap();
     let mut child = cmd
-        .env("CURSOR_AGENT_PATH", "/bin/cat")
+        .env("CURSOR_AGENT_PATH", bin)
         .env("SUMMARY_BACKEND", "extractive")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -72,7 +77,7 @@ fn mcp_end_to_end() {
         &mut stdin,
         &serde_json::json!({
             "jsonrpc":"2.0","id":3,"method":"tools/call",
-            "params": {"name":"create_agent","arguments":{"name":"t","args":[]}}
+            "params": {"name":"create_agent","arguments":{"name":"t","args": args}}
         }),
     );
     let resp = read_framed(&mut stdout);
