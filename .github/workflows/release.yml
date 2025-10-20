@@ -42,8 +42,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
+        shell: bash
         run: |
-          cargo build --release --target ${{ matrix.target }}
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            cargo install cross --git https://github.com/cross-rs/cross --force
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
 
       - name: Prepare artifact
         shell: bash
