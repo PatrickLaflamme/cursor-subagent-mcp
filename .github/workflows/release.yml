@@ -26,7 +26,7 @@ jobs:
             artifact: cursor-mcp-subagents-macos-aarch64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: cursor-mcp-subagents-windows-x86_64.exe
+            artifact: cursor-mcp-subagents-windows-x86_64
 
     steps:
       - name: Checkout
@@ -55,6 +55,26 @@ jobs:
           mkdir -p dist
           OUT="dist/${{ matrix.artifact }}${EXT}"
           cp "$SRC" "$OUT"
+
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          for f in dist/*; do
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$f" > "$f.sha256"
+            elif command -v shasum >/dev/null 2>&1; then
+              shasum -a 256 "$f" > "$f.sha256"
+            else
+              if [[ "$RUNNER_OS" == "Windows" ]]; then
+                # certutil prints the hash on the second line
+                HASH=$(certutil -hashfile "$f" SHA256 | sed -n '2p' | tr -d '\r')
+                BASENAME=$(basename "$f")
+                echo "$HASH  $BASENAME" > "$f.sha256"
+              else
+                echo "No checksum tool found" && exit 1
+              fi
+            fi
+          done
 
       - name: Upload artifact to release
         uses: softprops/action-gh-release@v2
