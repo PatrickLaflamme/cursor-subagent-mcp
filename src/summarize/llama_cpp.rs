@@ -1,7 +1,7 @@
 use crate::errors::SummarizeError;
-use crate::summarize::{Summarizer, SummarizeResult};
-use std::process::{Command, Stdio};
+use crate::summarize::{SummarizeResult, Summarizer};
 use std::io::Read;
+use std::process::{Command, Stdio};
 
 pub struct LlamaCppSummarizer {
     model_path: String,
@@ -12,12 +12,20 @@ impl LlamaCppSummarizer {
     pub fn new(model_path: String) -> Self {
         // Allow overriding CLI path via env; default to "llama-cli" on PATH
         let cli_path = std::env::var("LLAMA_CPP_CLI").unwrap_or_else(|_| "llama-cli".to_string());
-        Self { model_path, cli_path }
+        Self {
+            model_path,
+            cli_path,
+        }
     }
 }
 
 impl Summarizer for LlamaCppSummarizer {
-    fn summarize(&self, context: &str, instructions: Option<&str>, max_tokens: usize) -> Result<SummarizeResult, SummarizeError> {
+    fn summarize(
+        &self,
+        context: &str,
+        instructions: Option<&str>,
+        max_tokens: usize,
+    ) -> Result<SummarizeResult, SummarizeError> {
         let max_tokens = max_tokens.min(1000);
         let prompt = format!(
             "[System]\nYou are a concise, factual summarizer. Produce a brief progress report focusing on goals, actions taken, results, blockers, next steps. Avoid speculation. Limit to {max_tokens} tokens.\n\n[User]\nInstructions: {}\nContext:\n{}",
@@ -27,16 +35,23 @@ impl Summarizer for LlamaCppSummarizer {
 
         // Invoke llama.cpp CLI: llama-cli -m <model.gguf> -p <prompt> -n <max_tokens>
         let mut child = Command::new(&self.cli_path)
-            .arg("-m").arg(&self.model_path)
-            .arg("-p").arg(&prompt)
-            .arg("-n").arg(max_tokens.to_string())
+            .arg("-m")
+            .arg(&self.model_path)
+            .arg("-p")
+            .arg(&prompt)
+            .arg("-n")
+            .arg(max_tokens.to_string())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|_| SummarizeError::Unavailable)?;
 
         let mut out = String::new();
-        if let Some(mut s) = child.stdout.take() { use std::io::Read as _; s.read_to_string(&mut out).map_err(|e| SummarizeError::Other(format!("read stdout: {e}")))?; }
+        if let Some(mut s) = child.stdout.take() {
+            use std::io::Read as _;
+            s.read_to_string(&mut out)
+                .map_err(|e| SummarizeError::Other(format!("read stdout: {e}")))?;
+        }
         // Best-effort: wait but don't block forever
         let _ = child.wait();
 
@@ -47,9 +62,15 @@ impl Summarizer for LlamaCppSummarizer {
         // Enforce a hard character cap approximating token budget
         let approx_tokens_per_char = 0.25f64;
         let max_chars = (max_tokens as f64 / approx_tokens_per_char) as usize;
-        if out.len() > max_chars { out.truncate(max_chars); }
+        if out.len() > max_chars {
+            out.truncate(max_chars);
+        }
 
-        Ok(SummarizeResult { summary: out, tokens_used: max_tokens, backend: "llama_cpp".into() })
+        Ok(SummarizeResult {
+            summary: out,
+            tokens_used: max_tokens,
+            backend: "llama_cpp".into(),
+        })
     }
 }
 
@@ -87,5 +108,3 @@ mod tests {
         assert!(res.summary.len() <= 40);
     }
 }
-
-

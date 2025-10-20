@@ -21,5 +21,3 @@ pub enum SummarizeError {
     #[error("other: {0}")]
     Other(String),
 }
-
-

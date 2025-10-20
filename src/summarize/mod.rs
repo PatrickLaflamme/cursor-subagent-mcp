@@ -8,19 +8,27 @@ pub struct SummarizeResult {
 }
 
 pub trait Summarizer: Send + Sync {
-    fn summarize(&self, context: &str, instructions: Option<&str>, max_tokens: usize) -> Result<SummarizeResult, SummarizeError>;
+    fn summarize(
+        &self,
+        context: &str,
+        instructions: Option<&str>,
+        max_tokens: usize,
+    ) -> Result<SummarizeResult, SummarizeError>;
 }
 
-
-mod ollama;
+mod cursor_agent;
 mod extractive;
 #[cfg(feature = "summarizer-llama-cpp")]
 mod llama_cpp;
-mod cursor_agent;
+mod ollama;
 
 use std::sync::Arc;
 
-pub fn build_summarizer(backend: String, model: String, ollama_host: String) -> Arc<dyn Summarizer> {
+pub fn build_summarizer(
+    backend: String,
+    model: String,
+    ollama_host: String,
+) -> Arc<dyn Summarizer> {
     match backend.as_str() {
         "ollama" => Arc::new(ollama::OllamaSummarizer::new(ollama_host, model)),
         #[cfg(feature = "summarizer-llama-cpp")]
@@ -29,5 +37,3 @@ pub fn build_summarizer(backend: String, model: String, ollama_host: String) -> 
         _ => Arc::new(extractive::ExtractiveSummarizer::default()),
     }
 }
-
-

@@ -1,5 +1,5 @@
 use crate::errors::SummarizeError;
-use crate::summarize::{Summarizer, SummarizeResult};
+use crate::summarize::{SummarizeResult, Summarizer};
 use reqwest::blocking::Client;
 
 pub struct OllamaSummarizer {
@@ -9,11 +9,22 @@ pub struct OllamaSummarizer {
 }
 
 impl OllamaSummarizer {
-    pub fn new(host: String, model: String) -> Self { Self { host, model, client: Client::new() } }
+    pub fn new(host: String, model: String) -> Self {
+        Self {
+            host,
+            model,
+            client: Client::new(),
+        }
+    }
 }
 
 impl Summarizer for OllamaSummarizer {
-    fn summarize(&self, context: &str, instructions: Option<&str>, max_tokens: usize) -> Result<SummarizeResult, SummarizeError> {
+    fn summarize(
+        &self,
+        context: &str,
+        instructions: Option<&str>,
+        max_tokens: usize,
+    ) -> Result<SummarizeResult, SummarizeError> {
         let max_tokens = max_tokens.min(1000);
         let prompt = format!(
             "[System]\nYou are a concise, factual summarizer. Produce a brief progress report focusing on goals, actions taken, results, blockers, next steps. Avoid speculation. Limit to {max_tokens} tokens.\n\n[User]\nInstructions: {}\nContext:\n{}",
@@ -36,9 +47,19 @@ impl Summarizer for OllamaSummarizer {
             match self.client.post(&url).json(&body).send() {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        let v: serde_json::Value = resp.json().map_err(|e| SummarizeError::Http(format!("decode response: {e}")))?;
-                        let summary = v.get("response").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                        return Ok(SummarizeResult { summary, tokens_used: max_tokens, backend: "ollama".into() });
+                        let v: serde_json::Value = resp
+                            .json()
+                            .map_err(|e| SummarizeError::Http(format!("decode response: {e}")))?;
+                        let summary = v
+                            .get("response")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        return Ok(SummarizeResult {
+                            summary,
+                            tokens_used: max_tokens,
+                            backend: "ollama".into(),
+                        });
                     } else {
                         last_err = Some(format!("status {} from {}", resp.status(), self.host));
                     }
@@ -50,7 +71,9 @@ impl Summarizer for OllamaSummarizer {
             // backoff
             std::thread::sleep(std::time::Duration::from_millis(100 * (attempt + 1)));
         }
-        return Err(SummarizeError::Http(last_err.unwrap_or_else(|| "ollama request failed".into())));
+        return Err(SummarizeError::Http(
+            last_err.unwrap_or_else(|| "ollama request failed".into()),
+        ));
     }
 }
 
@@ -88,7 +111,9 @@ mod tests {
 
         let host = format!("http://{}:{}", addr.ip(), addr.port());
         let s = OllamaSummarizer::new(host, "test-model".into());
-        let res = s.summarize("context", Some("instr"), 32).expect("summarize ok");
+        let res = s
+            .summarize("context", Some("instr"), 32)
+            .expect("summarize ok");
         assert_eq!(res.backend, "ollama");
         assert_eq!(res.tokens_used, 32);
         assert!(res.summary.contains("ok summary"));
@@ -116,9 +141,10 @@ mod tests {
         let host = format!("http://{}:{}", addr.ip(), addr.port());
         let s = OllamaSummarizer::new(host, "test-model".into());
         let err = s.summarize("ctx", None, 16).unwrap_err();
-        match err { SummarizeError::Http(_) => {}, _ => panic!("expected http error") }
+        match err {
+            SummarizeError::Http(_) => {}
+            _ => panic!("expected http error"),
+        }
         let _ = handle.join();
     }
 }
-
-

@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
-mod mcp;
+mod agents;
 mod config;
 mod errors;
-mod logging;
-mod summarize;
-mod agents;
 mod health;
+mod logging;
+mod mcp;
+mod summarize;
 
+use crate::agents::manager::AgentManagerImpl;
 use crate::config::AppConfig;
 use crate::mcp::StdioMcpServer;
-use crate::summarize::{build_summarizer};
-use crate::agents::manager::AgentManagerImpl;
+use crate::summarize::build_summarizer;
 
 #[tokio::main]
 async fn main() {
@@ -32,8 +32,16 @@ async fn main() {
 
     // Startup health checks (best-effort, logged only)
     let cursor_ok = health::check_cursor_agent(cfg.cursor_agent_path.as_deref());
-    let ollama_ok = if cfg.summary_backend == "ollama" { health::check_ollama(&cfg.ollama_host) } else { false };
-    let llama_ok = if cfg.summary_backend == "llama_cpp" { health::check_llama_cpp_cli() } else { false };
+    let ollama_ok = if cfg.summary_backend == "ollama" {
+        health::check_ollama(&cfg.ollama_host)
+    } else {
+        false
+    };
+    let llama_ok = if cfg.summary_backend == "llama_cpp" {
+        health::check_llama_cpp_cli()
+    } else {
+        false
+    };
     tracing::info!(
         cursor_agent_ok=cursor_ok,
         ollama_ok=ollama_ok,
@@ -43,7 +51,9 @@ async fn main() {
         "MCP server startup complete"
     );
 
-    if let Err(e) = cfg.validate() { tracing::warn!(config_error=%e, "invalid config"); }
+    if let Err(e) = cfg.validate() {
+        tracing::warn!(config_error=%e, "invalid config");
+    }
     let server = StdioMcpServer::new(agent_manager.clone(), summarizer);
     // Graceful shutdown without spawning (run future is not Send due to stdio locks)
     tokio::select! {
@@ -56,5 +66,3 @@ async fn main() {
         }
     }
 }
-
-

@@ -29,16 +29,21 @@ impl AppConfig {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.buffer_bytes == 0 { return Err("buffer_bytes must be > 0".into()); }
-        if self.buffer_bytes > 100 * 1024 * 1024 { return Err("buffer_bytes too large (max 100MB)".into()); }
+        if self.buffer_bytes == 0 {
+            return Err("buffer_bytes must be > 0".into());
+        }
+        if self.buffer_bytes > 100 * 1024 * 1024 {
+            return Err("buffer_bytes too large (max 100MB)".into());
+        }
         if self.summary_backend == "ollama" {
-            url::Url::parse(&self.ollama_host).map_err(|_| "Invalid OLLAMA_HOST URL format".to_string())?;
+            url::Url::parse(&self.ollama_host)
+                .map_err(|_| "Invalid OLLAMA_HOST URL format".to_string())?;
         }
         if self.summary_backend == "llama_cpp" {
-            if !std::path::Path::new(&self.summary_model).exists() { return Err("llama.cpp model file does not exist".into()); }
+            if !std::path::Path::new(&self.summary_model).exists() {
+                return Err("llama.cpp model file does not exist".into());
+            }
         }
         Ok(())
     }
 }
-
-

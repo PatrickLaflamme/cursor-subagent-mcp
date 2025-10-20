@@ -1,5 +1,5 @@
 use crate::errors::SummarizeError;
-use crate::summarize::{Summarizer, SummarizeResult};
+use crate::summarize::{SummarizeResult, Summarizer};
 use std::process::{Command, Stdio};
 
 pub struct CursorAgentSummarizer {
@@ -9,13 +9,20 @@ pub struct CursorAgentSummarizer {
 
 impl CursorAgentSummarizer {
     pub fn new(model: String) -> Self {
-        let bin = std::env::var("CURSOR_AGENT_PATH").ok().unwrap_or_else(|| "cursor-agent".to_string());
+        let bin = std::env::var("CURSOR_AGENT_PATH")
+            .ok()
+            .unwrap_or_else(|| "cursor-agent".to_string());
         Self { model, bin }
     }
 }
 
 impl Summarizer for CursorAgentSummarizer {
-    fn summarize(&self, context: &str, instructions: Option<&str>, max_tokens: usize) -> Result<SummarizeResult, SummarizeError> {
+    fn summarize(
+        &self,
+        context: &str,
+        instructions: Option<&str>,
+        max_tokens: usize,
+    ) -> Result<SummarizeResult, SummarizeError> {
         let max_tokens = max_tokens.min(1000);
         let prompt = format!(
             "[System]\nYou are a concise, factual summarizer. Produce a brief progress report focusing on goals, actions taken, results, blockers, next steps. Avoid speculation. Limit to {max_tokens} tokens.\n\n[User]\nInstructions: {}\nContext:\n{}",
@@ -24,12 +31,18 @@ impl Summarizer for CursorAgentSummarizer {
         );
 
         // Prefer model from config, default to 'auto'
-        let model = if self.model.is_empty() { "auto" } else { &self.model };
+        let model = if self.model.is_empty() {
+            "auto"
+        } else {
+            &self.model
+        };
 
         // Hypothetical CLI flags: --model, --max-tokens, read prompt from stdin
         let mut child = Command::new(&self.bin)
-            .arg("--model").arg(model)
-            .arg("--max-tokens").arg(max_tokens.to_string())
+            .arg("--model")
+            .arg(model)
+            .arg("--max-tokens")
+            .arg(max_tokens.to_string())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -38,21 +51,35 @@ impl Summarizer for CursorAgentSummarizer {
 
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
-            stdin.write_all(prompt.as_bytes()).map_err(|e| SummarizeError::Other(format!("write prompt: {e}")))?;
+            stdin
+                .write_all(prompt.as_bytes())
+                .map_err(|e| SummarizeError::Other(format!("write prompt: {e}")))?;
         }
 
         let mut out = String::new();
-        if let Some(mut s) = child.stdout.take() { use std::io::Read as _; s.read_to_string(&mut out).map_err(|e| SummarizeError::Other(format!("read stdout: {e}")))?; }
+        if let Some(mut s) = child.stdout.take() {
+            use std::io::Read as _;
+            s.read_to_string(&mut out)
+                .map_err(|e| SummarizeError::Other(format!("read stdout: {e}")))?;
+        }
         let _ = child.wait();
 
-        if out.trim().is_empty() { return Err(SummarizeError::Unavailable); }
+        if out.trim().is_empty() {
+            return Err(SummarizeError::Unavailable);
+        }
 
         // Hard cap by characters (~0.25 tokens/char)
         let approx_tokens_per_char = 0.25f64;
         let max_chars = (max_tokens as f64 / approx_tokens_per_char) as usize;
-        if out.len() > max_chars { out.truncate(max_chars); }
+        if out.len() > max_chars {
+            out.truncate(max_chars);
+        }
 
-        Ok(SummarizeResult { summary: out, tokens_used: max_tokens, backend: "cursor_agent".into() })
+        Ok(SummarizeResult {
+            summary: out,
+            tokens_used: max_tokens,
+            backend: "cursor_agent".into(),
+        })
     }
 }
 
@@ -90,5 +117,3 @@ mod tests {
         assert!(res.summary.len() <= 40); // ~4 tokens => ~16 chars, allow slack
     }
 }
-
-

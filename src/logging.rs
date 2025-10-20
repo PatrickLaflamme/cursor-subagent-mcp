@@ -2,7 +2,10 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 pub fn init_logging() {
     let silent = std::env::var("MCP_SILENT").ok().as_deref() == Some("1")
-        || std::env::var("MCP_LOG").ok().map(|v| v.eq_ignore_ascii_case("off") || v.eq_ignore_ascii_case("0")).unwrap_or(false);
+        || std::env::var("MCP_LOG")
+            .ok()
+            .map(|v| v.eq_ignore_ascii_case("off") || v.eq_ignore_ascii_case("0"))
+            .unwrap_or(false);
 
     let env_filter = if silent {
         EnvFilter::new("off")
@@ -19,9 +22,7 @@ pub fn init_logging() {
         .with_thread_names(false);
 
     if silent {
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .init();
+        tracing_subscriber::registry().with(env_filter).init();
     } else {
         tracing_subscriber::registry()
             .with(env_filter)
@@ -29,5 +30,3 @@ pub fn init_logging() {
             .init();
     }
 }
-
-

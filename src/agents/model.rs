@@ -35,12 +35,18 @@ pub struct AgentOutputBuffer {
 
 impl AgentOutputBuffer {
     pub fn new(capacity_bytes: usize) -> Self {
-        Self { lines: VecDeque::new(), capacity_bytes, current_bytes: 0 }
+        Self {
+            lines: VecDeque::new(),
+            capacity_bytes,
+            current_bytes: 0,
+        }
     }
 
     pub fn push_line(&mut self, line: String) {
         let added = line.len();
-        if self.current_bytes + added > self.capacity_bytes { self.lines.reserve(1); }
+        if self.current_bytes + added > self.capacity_bytes {
+            self.lines.reserve(1);
+        }
         self.lines.push_back(line);
         self.current_bytes += added;
         while self.current_bytes > self.capacity_bytes {
@@ -54,7 +60,10 @@ impl AgentOutputBuffer {
 
     pub fn concat(&self) -> String {
         let mut s = String::with_capacity(self.current_bytes.min(self.capacity_bytes));
-        for l in &self.lines { s.push_str(l); s.push('\n'); }
+        for l in &self.lines {
+            s.push_str(l);
+            s.push('\n');
+        }
         s
     }
 }
@@ -88,5 +97,3 @@ mod tests {
         assert!(s.ends_with('\n'));
     }
 }
-
-

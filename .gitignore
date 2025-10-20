@@ -1,18 +1,15 @@
-# Rust build artifacts
+# Rust build
 /target/
-/debug/
-/release/
-
-# Backup files
-**/*.rs.bk
 
 # Logs
-*.log
+logs/
 
-# OS/editor files
+# OS / editor
 .DS_Store
 .idea/
 .vscode/
-*.iml
 
+# Cursor agent artifacts
+.cursor/
+.agent-tools/
 

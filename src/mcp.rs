@@ -1,12 +1,12 @@
 use crate::agents::manager::{AgentManagerImpl, StopSignal};
-use crate::agents::model::{CreateAgentRequest};
-use crate::summarize::{Summarizer};
-use serde::Deserialize;
+use crate::agents::model::CreateAgentRequest;
 use crate::health;
+use crate::summarize::Summarizer;
+use serde::Deserialize;
 use serde_json::json;
 use std::io::Write;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 // Global switch: once we detect raw JSON (no Content-Length) from the client,
 // we reply in ND-JSON (one JSON per line, no headers).
@@ -19,7 +19,10 @@ pub struct StdioMcpServer {
 
 impl StdioMcpServer {
     pub fn new(manager: Arc<AgentManagerImpl>, summarizer: Arc<dyn Summarizer>) -> Self {
-        Self { manager, summarizer }
+        Self {
+            manager,
+            summarizer,
+        }
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
@@ -39,7 +42,10 @@ impl StdioMcpServer {
             };
             let req: serde_json::Value = match serde_json::from_slice(&msg) {
                 Ok(v) => v,
-                Err(e) => { tracing::warn!(error=?e, "invalid JSON"); continue; }
+                Err(e) => {
+                    tracing::warn!(error=?e, "invalid JSON");
+                    continue;
+                }
             };
 
             let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
@@ -49,7 +55,10 @@ impl StdioMcpServer {
             match method {
                 "initialize" => {
                     let params = req.get("params").cloned().unwrap_or(json!({}));
-                    let client_proto = params.get("protocolVersion").and_then(|x| x.as_str()).unwrap_or("2024-11-05");
+                    let client_proto = params
+                        .get("protocolVersion")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("2024-11-05");
                     let result = json!({
                         "protocolVersion": client_proto,
                         "capabilities": {
@@ -59,18 +68,26 @@ impl StdioMcpServer {
                         },
                         "serverInfo": {"name": "cursor-mcp-subagents", "version": env!("CARGO_PKG_VERSION")}
                     });
-                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, result)?; }
+                    if let Some(id) = id_reply.clone() {
+                        write_response(&mut writer, id, result)?;
+                    }
                 }
                 "server/info" => {
                     let info = json!({"name": "cursor-mcp-subagents", "version": env!("CARGO_PKG_VERSION")});
-                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"serverInfo": info}))?; }
+                    if let Some(id) = id_reply.clone() {
+                        write_response(&mut writer, id, json!({"serverInfo": info}))?;
+                    }
                 }
                 "tools/list" => {
                     let tools = list_tools_schema();
-                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"tools": tools}))?; }
+                    if let Some(id) = id_reply.clone() {
+                        write_response(&mut writer, id, json!({"tools": tools}))?;
+                    }
                 }
                 "prompts/list" => {
-                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"prompts": []}))?; }
+                    if let Some(id) = id_reply.clone() {
+                        write_response(&mut writer, id, json!({"prompts": []}))?;
+                    }
                 }
                 "resources/list" => {
                     let resources = vec![
@@ -85,9 +102,11 @@ impl StdioMcpServer {
                             "name": "Active agents list",
                             "description": "List of currently running agents managed by the server",
                             "mimeType": "application/json"
-                        })
+                        }),
                     ];
-                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"resources": resources}))?; }
+                    if let Some(id) = id_reply.clone() {
+                        write_response(&mut writer, id, json!({"resources": resources}))?;
+                    }
                 }
                 "resources/read" => {
                     let params = req.get("params").cloned().unwrap_or(json!({}));
@@ -95,14 +114,23 @@ impl StdioMcpServer {
                     let (mime, text) = match uri {
                         "mcp://cursor-mcp-subagents/metrics" => {
                             let snap = self.manager.metrics_snapshot();
-                            ("application/json", serde_json::to_string_pretty(&snap).unwrap_or_else(|_| "{}".into()))
+                            (
+                                "application/json",
+                                serde_json::to_string_pretty(&snap).unwrap_or_else(|_| "{}".into()),
+                            )
                         }
                         "mcp://cursor-mcp-subagents/agents" => {
                             let list = self.manager.list().await;
-                            ("application/json", serde_json::to_string_pretty(&json!({"agents": list})).unwrap_or_else(|_| "{}".into()))
+                            (
+                                "application/json",
+                                serde_json::to_string_pretty(&json!({"agents": list}))
+                                    .unwrap_or_else(|_| "{}".into()),
+                            )
                         }
                         _ => {
-                            if let Some(id) = id_reply.clone() { write_error(&mut writer, id, -32602, "Unknown resource uri")?; }
+                            if let Some(id) = id_reply.clone() {
+                                write_error(&mut writer, id, -32602, "Unknown resource uri")?;
+                            }
                             continue;
                         }
                     };
@@ -111,7 +139,9 @@ impl StdioMcpServer {
                         "mimeType": mime,
                         "text": text
                     })];
-                    if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"contents": contents}))?; }
+                    if let Some(id) = id_reply.clone() {
+                        write_response(&mut writer, id, json!({"contents": contents}))?;
+                    }
                 }
                 "tools/call" => {
                     let params = req.get("params").cloned().unwrap_or(json!({}));
@@ -119,29 +149,50 @@ impl StdioMcpServer {
                     let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
                     let result = self.dispatch_tool(name, arguments).await;
                     match result {
-                        Ok(v) => { if let Some(id) = id_reply.clone() { write_response(&mut writer, id, json!({"content": [{"type":"json","json": v}], "isError": false}))?; } },
-                        Err(e) => { if let Some(id) = id_reply.clone() { write_error(&mut writer, id, -32001, &format!("{}", e))?; } },
+                        Ok(v) => {
+                            if let Some(id) = id_reply.clone() {
+                                write_response(
+                                    &mut writer,
+                                    id,
+                                    json!({"content": [{"type":"json","json": v}], "isError": false}),
+                                )?;
+                            }
+                        }
+                        Err(e) => {
+                            if let Some(id) = id_reply.clone() {
+                                write_error(&mut writer, id, -32001, &format!("{}", e))?;
+                            }
+                        }
                     }
                 }
                 _ => {
                     // Do not respond to notifications (no id)
-                    if let Some(id) = id_reply.clone() { write_error(&mut writer, id, -32601, "method not found")?; }
+                    if let Some(id) = id_reply.clone() {
+                        write_error(&mut writer, id, -32601, "method not found")?;
+                    }
                 }
             }
         }
         Ok(())
     }
 
-    async fn dispatch_tool(&self, name: &str, arguments: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    async fn dispatch_tool(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         match name {
             "create_agent" => {
                 let req: CreateAgentRequestWire = serde_json::from_value(arguments)?;
-                let resp = self.manager.create(CreateAgentRequest{
-                    name: req.name,
-                    working_dir: req.working_dir,
-                    env: req.env.unwrap_or_default(),
-                    args: req.args.unwrap_or_default(),
-                }).await?;
+                let resp = self
+                    .manager
+                    .create(CreateAgentRequest {
+                        name: req.name,
+                        working_dir: req.working_dir,
+                        env: req.env.unwrap_or_default(),
+                        args: req.args.unwrap_or_default(),
+                    })
+                    .await?;
                 Ok(serde_json::to_value(resp)?)
             }
             "send_agent_input" => {
@@ -157,7 +208,8 @@ impl StdioMcpServer {
                 let instructions = p.instructions.clone();
                 let res = tokio::task::spawn_blocking(move || {
                     summarizer.summarize(&buf, instructions.as_deref(), max_tokens)
-                }).await??;
+                })
+                .await??;
                 Ok(json!({
                     "summary": res.summary,
                     "tokens_used": res.tokens_used,
@@ -166,12 +218,17 @@ impl StdioMcpServer {
             }
             "reset_agent" => {
                 let p: ResetAgent = serde_json::from_value(arguments)?;
-                self.manager.reset(&p.agent_id, p.hard.unwrap_or(false)).await?;
+                self.manager
+                    .reset(&p.agent_id, p.hard.unwrap_or(false))
+                    .await?;
                 Ok(json!({"reset": if p.hard.unwrap_or(false) {"hard"} else {"soft"}}))
             }
             "stop_agent" => {
                 let p: StopAgent = serde_json::from_value(arguments)?;
-                let signal = match p.signal.as_deref() { Some("kill") => StopSignal::Kill, _ => StopSignal::Term };
+                let signal = match p.signal.as_deref() {
+                    Some("kill") => StopSignal::Kill,
+                    _ => StopSignal::Term,
+                };
                 self.manager.stop(&p.agent_id, signal).await?;
                 Ok(json!({"stopped": true}))
             }
@@ -181,7 +238,13 @@ impl StdioMcpServer {
             }
             "wait" => {
                 let p: WaitParams = serde_json::from_value(arguments)?;
-                let ms = if let Some(ms) = p.ms { ms } else if let Some(secs) = p.seconds { secs.saturating_mul(1000) } else { 0 };
+                let ms = if let Some(ms) = p.ms {
+                    ms
+                } else if let Some(secs) = p.seconds {
+                    secs.saturating_mul(1000)
+                } else {
+                    0
+                };
                 if ms > 0 {
                     tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
                 }
@@ -194,7 +257,9 @@ impl StdioMcpServer {
             "health_check" => {
                 let bin = self.manager.resolve_binary_path().ok();
                 let cursor_ok = health::check_cursor_agent(bin.as_deref());
-                let ollama_host = std::env::var("OLLAMA_HOST").ok().unwrap_or_else(|| "http://127.0.0.1:11434".into());
+                let ollama_host = std::env::var("OLLAMA_HOST")
+                    .ok()
+                    .unwrap_or_else(|| "http://127.0.0.1:11434".into());
                 let ollama_ok = health::check_ollama(&ollama_host);
                 let llama_ok = health::check_llama_cpp_cli();
                 Ok(json!({
@@ -251,9 +316,13 @@ fn read_framed_message_buf<R: std::io::BufRead>(bufreader: &mut R) -> anyhow::Re
     loop {
         header.clear();
         let n = bufreader.read_line(&mut header)?;
-        if n == 0 { anyhow::bail!("eof"); }
-        let line = header.trim_end_matches(['\r','\n']);
-        if line.is_empty() { break; }
+        if n == 0 {
+            anyhow::bail!("eof");
+        }
+        let line = header.trim_end_matches(['\r', '\n']);
+        if line.is_empty() {
+            break;
+        }
         header_lines += 1;
         tracing::trace!(%line, "framing header line");
         // Fallback for clients that send newline-delimited raw JSON instead of framed headers
@@ -274,17 +343,29 @@ fn read_framed_message_buf<R: std::io::BufRead>(bufreader: &mut R) -> anyhow::Re
     let len = content_length.ok_or_else(|| anyhow::anyhow!("missing Content-Length"))?;
     let mut body = vec![0u8; len];
     bufreader.read_exact(&mut body)?;
-    let preview = std::str::from_utf8(&body).ok().map(|s| if s.len() > 200 { &s[..200] } else { s }).unwrap_or("<non-utf8>");
+    let preview = std::str::from_utf8(&body)
+        .ok()
+        .map(|s| if s.len() > 200 { &s[..200] } else { s })
+        .unwrap_or("<non-utf8>");
     tracing::trace!(header_lines, content_length=len, body_bytes=body.len(), preview=%preview, "framed message parsed");
     Ok(body)
 }
 
-fn write_response<W: Write>(writer: &mut W, id: serde_json::Value, result: serde_json::Value) -> anyhow::Result<()> {
+fn write_response<W: Write>(
+    writer: &mut W,
+    id: serde_json::Value,
+    result: serde_json::Value,
+) -> anyhow::Result<()> {
     let resp = json!({"jsonrpc":"2.0","id": id, "result": result});
     write_framed(writer, &resp)
 }
 
-fn write_error<W: Write>(writer: &mut W, id: serde_json::Value, code: i64, message: &str) -> anyhow::Result<()> {
+fn write_error<W: Write>(
+    writer: &mut W,
+    id: serde_json::Value,
+    code: i64,
+    message: &str,
+) -> anyhow::Result<()> {
     let resp = json!({"jsonrpc":"2.0","id": id, "error": {"code": code, "message": message}});
     write_framed(writer, &resp)
 }
@@ -311,8 +392,17 @@ mod tests {
 
     struct DummySummarizer;
     impl Summarizer for DummySummarizer {
-        fn summarize(&self, context: &str, _instructions: Option<&str>, max_tokens: usize) -> Result<crate::summarize::SummarizeResult, crate::errors::SummarizeError> {
-            Ok(crate::summarize::SummarizeResult { summary: context.chars().take(8).collect(), tokens_used: max_tokens.min(1000), backend: "dummy".into() })
+        fn summarize(
+            &self,
+            context: &str,
+            _instructions: Option<&str>,
+            max_tokens: usize,
+        ) -> Result<crate::summarize::SummarizeResult, crate::errors::SummarizeError> {
+            Ok(crate::summarize::SummarizeResult {
+                summary: context.chars().take(8).collect(),
+                tokens_used: max_tokens.min(1000),
+                backend: "dummy".into(),
+            })
         }
     }
 
@@ -331,31 +421,69 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_create_list_and_metrics() {
-        let manager = Arc::new(crate::agents::manager::AgentManagerImpl::new(Some("/bin/cat".into()), 16 * 1024));
+        let manager = Arc::new(crate::agents::manager::AgentManagerImpl::new(
+            Some("/bin/cat".into()),
+            16 * 1024,
+        ));
         let server = StdioMcpServer::new(manager.clone(), Arc::new(DummySummarizer));
         // create agent
-        let resp = server.dispatch_tool("create_agent", serde_json::json!({"name":"t","args":[]})).await.unwrap();
-        let id = resp.get("agent_id").and_then(|x| x.as_str()).unwrap().to_string();
+        let resp = server
+            .dispatch_tool("create_agent", serde_json::json!({"name":"t","args":[]}))
+            .await
+            .unwrap();
+        let id = resp
+            .get("agent_id")
+            .and_then(|x| x.as_str())
+            .unwrap()
+            .to_string();
         // list
-        let list = server.dispatch_tool("list_agents", serde_json::json!({})).await.unwrap();
+        let list = server
+            .dispatch_tool("list_agents", serde_json::json!({}))
+            .await
+            .unwrap();
         assert!(list.get("agents").is_some());
         // metrics
-        let _ = server.dispatch_tool("metrics", serde_json::json!({})).await.unwrap();
+        let _ = server
+            .dispatch_tool("metrics", serde_json::json!({}))
+            .await
+            .unwrap();
         // stop
-        let _ = server.dispatch_tool("stop_agent", serde_json::json!({"agent_id": id})).await.unwrap();
+        let _ = server
+            .dispatch_tool("stop_agent", serde_json::json!({"agent_id": id}))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
     async fn dispatch_get_agent_progress_calls_summarizer() {
-        let manager = Arc::new(crate::agents::manager::AgentManagerImpl::new(Some("/bin/cat".into()), 16 * 1024));
+        let manager = Arc::new(crate::agents::manager::AgentManagerImpl::new(
+            Some("/bin/cat".into()),
+            16 * 1024,
+        ));
         let server = StdioMcpServer::new(manager.clone(), Arc::new(DummySummarizer));
-        let resp = server.dispatch_tool("create_agent", serde_json::json!({"args":[]})).await.unwrap();
-        let id = resp.get("agent_id").and_then(|x| x.as_str()).unwrap().to_string();
+        let resp = server
+            .dispatch_tool("create_agent", serde_json::json!({"args":[]}))
+            .await
+            .unwrap();
+        let id = resp
+            .get("agent_id")
+            .and_then(|x| x.as_str())
+            .unwrap()
+            .to_string();
         // feed some output
         manager.send_input(&id, "abcdefg").await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-        let res = server.dispatch_tool("get_agent_progress", serde_json::json!({"agent_id": id, "max_tokens": 12})).await.unwrap();
-        assert_eq!(res.get("backend").and_then(|x| x.as_str()).unwrap(), "dummy");
+        let res = server
+            .dispatch_tool(
+                "get_agent_progress",
+                serde_json::json!({"agent_id": id, "max_tokens": 12}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.get("backend").and_then(|x| x.as_str()).unwrap(),
+            "dummy"
+        );
         assert_eq!(res.get("tokens_used").and_then(|x| x.as_u64()).unwrap(), 12);
         assert!(res.get("summary").and_then(|x| x.as_str()).unwrap().len() <= 8);
     }
@@ -371,18 +499,32 @@ struct CreateAgentRequestWire {
 }
 
 #[derive(Debug, Deserialize)]
-struct SendAgentInput { agent_id: String, input: String }
+struct SendAgentInput {
+    agent_id: String,
+    input: String,
+}
 
 #[derive(Debug, Deserialize)]
-struct GetAgentProgress { agent_id: String, instructions: Option<String>, max_tokens: Option<usize> }
+struct GetAgentProgress {
+    agent_id: String,
+    instructions: Option<String>,
+    max_tokens: Option<usize>,
+}
 
 #[derive(Debug, Deserialize)]
-struct ResetAgent { agent_id: String, hard: Option<bool> }
+struct ResetAgent {
+    agent_id: String,
+    hard: Option<bool>,
+}
 
 #[derive(Debug, Deserialize)]
-struct StopAgent { agent_id: String, signal: Option<String> }
+struct StopAgent {
+    agent_id: String,
+    signal: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
-struct WaitParams { ms: Option<u64>, seconds: Option<u64> }
-
-
+struct WaitParams {
+    ms: Option<u64>,
+    seconds: Option<u64>,
+}
