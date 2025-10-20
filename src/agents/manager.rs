@@ -209,7 +209,9 @@ impl AgentManagerImpl {
                         let mut child = handle.child.lock();
                         child.try_wait().ok().flatten().is_some()
                     };
-                    if exited { break; }
+                    if exited {
+                        break;
+                    }
                     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
